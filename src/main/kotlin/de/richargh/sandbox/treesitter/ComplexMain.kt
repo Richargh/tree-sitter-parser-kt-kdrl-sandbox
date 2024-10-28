@@ -11,6 +11,7 @@ private const val javaCode = """
     import de.richargh.Blubb;
     
     public class FooService {
+        private final String name = Blubb.name();
         private final Outside outside;
         public FooService(){
             this.outside = new Outside();
@@ -47,7 +48,7 @@ fun main() {
     printNode(rootNode, "")
     val fileContext = FileContext(javaCodeLines)
     traverseNode(rootNode, fileContext)
-    println(fileContext)
+    println(fileContext.format(0))
 }
 
 private fun traverseNode(node: TSNode, context: Context) {
@@ -56,15 +57,19 @@ private fun traverseNode(node: TSNode, context: Context) {
     when (node.type) {
         "import_declaration" -> {
             currentContext.addImport(node)
-            childrenToExplore = 0..0
+            childrenToExplore = IntRange.EMPTY
         }
 
         "class_declaration" -> {
-            val (nextContext, classBodyIndex) = handleClassHeader(node, context)
+            val (nextContext, classBodyIndex) = handleClassDeclaration(node, context)
             currentContext = nextContext
             childrenToExplore = classBodyIndex until node.childCount
         }
-        "class_body" -> {
+        "field_declaration" -> {
+            handleFieldDeclaration(node, context)
+            childrenToExplore = IntRange.EMPTY
+        }
+        "method_invocation" -> {
 
         }
     }
@@ -74,7 +79,7 @@ private fun traverseNode(node: TSNode, context: Context) {
     }
 }
 
-private fun handleClassHeader(node: TSNode, context: Context): Pair<Context, Int> {
+private fun handleClassDeclaration(node: TSNode, context: Context): Pair<Context, Int> {
     var bodyIndex = 0
     var modifier = "default"
     var identifier = "none"
@@ -93,6 +98,22 @@ private fun handleClassHeader(node: TSNode, context: Context): Pair<Context, Int
     )
 }
 
+private fun handleFieldDeclaration(node: TSNode, context: Context) {
+    var modifier = "default"
+    var typeIdentifier = "none"
+    var identifier = "none"
+    (0 until node.childCount).forEach { index ->
+        val currentNode = node.getChild(index)
+        when (currentNode.type) {
+            "modifiers" -> modifier = contents(currentNode, context.codeLines)
+            "type_identifier" -> typeIdentifier = contents(currentNode, context.codeLines)
+            "variable_declarator" -> identifier = contents(currentNode, context.codeLines)
+        }
+    }
+
+    context.addField(modifier, identifier, typeIdentifier)
+}
+
 private fun printNode(node: TSNode, indent: String) {
     println("$indent${node.type} [${node.startPoint.row}, ${node.startPoint.column}] - [${node.endPoint.row}, ${node.endPoint.column}]")
 
@@ -107,15 +128,17 @@ interface Context {
     val codeLines: List<String>
     fun addContext(context: Context): Context
     fun addImport(node: TSNode)
+    fun addField(modifier: String, identifier: String, typeIdentifier: String)
+
+    fun format(indent: Int): String
 
     fun builder(): ContextBuilder
 }
 
 abstract class BaseContext(override val previous: Context?, override val codeLines: List<String>) : Context {
-    abstract val kind: String
-    abstract val details: String
     private val children: MutableList<Context> = mutableListOf()
     private val imports: MutableList<String> = mutableListOf()
+    private val fields: MutableList<String> = mutableListOf()
 
     override fun addContext(context: Context): Context {
         children.add(context)
@@ -127,18 +150,33 @@ abstract class BaseContext(override val previous: Context?, override val codeLin
         imports.add(importPath)
     }
 
-    override fun toString(): String {
-        val indent = "  "
+    override fun addField(modifier: String, identifier: String, typeIdentifier: String) {
+        fields.add("$modifier $identifier: $typeIdentifier")
+    }
+
+    abstract fun formatHeader(): String
+
+    override fun format(indent: Int): String {
+        val headerIndent = (0 until indent).joinToString(separator = "") { " " }
+        val subIndent = (0 until indent + 2).joinToString(separator = "") { " " }
         return buildString {
-            append(kind)
-            append(" ")
-            appendLine(details)
+            append(headerIndent)
+            append(formatHeader())
+
             if (imports.isNotEmpty()) {
-                append(indent)
-                appendLine(imports.joinToString("\n$indent"))
+                append(subIndent)
+                appendLine(imports.joinToString("\n$subIndent"))
             }
-            append(indent)
-            appendLine(children.joinToString("\n$indent"))
+
+            if (fields.isNotEmpty()) {
+                append(subIndent)
+                appendLine(fields.joinToString("\n$subIndent"))
+            }
+
+            if(children.isNotEmpty()) {
+                append(subIndent)
+                appendLine(children.joinToString(separator = "") { it.format(indent + 2) })
+            }
         }
     }
 
@@ -169,22 +207,34 @@ class BaseContextBuilder(private val previous: Context, private val codeLines: L
 }
 
 class FileContext(codeLines: List<String>) : BaseContext(null, codeLines) {
-    override val kind: String = "File"
-    override val details: String = ""
+    override fun formatHeader(): String {
+        return buildString {
+            appendLine("File")
+        }
+    }
 }
 
 class PackageContext(previous: Context, codeLines: List<String>) : BaseContext(previous, codeLines) {
-    override val kind: String = "Package"
-    override val details: String = ""
+    override fun formatHeader(): String {
+        return buildString {
+            appendLine("Package")
+        }
+    }
 }
 
 class ClassContext(val modifier: String, val identifier: String, previous: Context, codeLines: List<String>) :
     BaseContext(previous, codeLines) {
-    override val kind: String = "Class"
-    override val details: String = "$identifier $modifier "
+    override fun formatHeader(): String {
+        return buildString {
+            appendLine("$modifier class $identifier ")
+        }
+    }
 }
 
 class FunctionContext(previous: Context, codeLines: List<String>) : BaseContext(previous, codeLines) {
-    override val kind: String = "Function"
-    override val details: String = ""
+    override fun formatHeader(): String {
+        return buildString {
+            appendLine("Function")
+        }
+    }
 }
