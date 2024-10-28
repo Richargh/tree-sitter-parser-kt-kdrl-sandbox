@@ -1,0 +1,14 @@
+= Tree-Sitter Parser in Kotlin (Sandbox)
+
+== Features
+
+* link:https://tree-sitter.github.io/tree-sitter/[Tree-Sitter]
+* link:https://github.com/bonede/tree-sitter-ng[Next generation Tree Sitter Java bindings]
+
+== Preconditions
+
+* Install the java version from link:.sdkmanrc[] via link:https://sdkman.io/[SdkMan] by calling `sdk env`
+
+== Usage
+
+* `./gradlew run` to run simple example
