@@ -65,12 +65,18 @@ private fun traverseNode(node: TSNode, context: Context) {
             currentContext = nextContext
             childrenToExplore = classBodyIndex until node.childCount
         }
+
         "field_declaration" -> {
             handleFieldDeclaration(node, context)
             childrenToExplore = IntRange.EMPTY
         }
+
         "method_invocation" -> {
             handleMethodInvocation(node, context)
+        }
+
+        "method_declaration" -> {
+            handleMethodDeclaration(node, context)
         }
     }
 
@@ -128,6 +134,24 @@ private fun handleMethodInvocation(node: TSNode, context: Context) {
     }
 
     context.addMethodInvocation(fieldAccess, identifier, argumentList)
+}
+
+private fun handleMethodDeclaration(node: TSNode, context: Context): Context {
+    var modifiers = ""
+    var returnType = ""
+    var identifier = ""
+    var parameters = ""
+    (0 until node.childCount).forEach { index ->
+        val currentNode = node.getChild(index)
+        when (currentNode.type) {
+            "modifiers" -> modifiers = contents(currentNode, context.codeLines)
+            "void_type" -> returnType = contents(currentNode, context.codeLines)
+            "identifier" -> identifier = contents(currentNode, context.codeLines)
+            "formal_parameters" -> parameters = contents(currentNode, context.codeLines)
+        }
+    }
+
+    return context.addContext(context.builder().buildFunctionContext(modifiers, identifier, parameters, returnType))
 }
 
 private fun printNode(node: TSNode, indent: String) {
@@ -201,7 +225,7 @@ abstract class BaseContext(override val previous: Context?, override val codeLin
                 appendLine(invokedMethods.joinToString("\n${subIndent}Invoke: "))
             }
 
-            if(children.isNotEmpty()) {
+            if (children.isNotEmpty()) {
                 append(subIndent)
                 appendLine(children.joinToString(separator = "") { it.format(indent + 2) })
             }
@@ -217,7 +241,7 @@ abstract class BaseContext(override val previous: Context?, override val codeLin
 interface ContextBuilder {
     fun buildPackageContext(): PackageContext
     fun buildClassContext(modifier: String, identifier: String): ClassContext
-    fun buildFunctionContext(): FunctionContext
+    fun buildFunctionContext(modifiers: String, identifier: String, parameters: String, returnType: String): FunctionContext
 }
 
 class BaseContextBuilder(private val previous: Context, private val codeLines: List<String>) : ContextBuilder {
@@ -229,9 +253,10 @@ class BaseContextBuilder(private val previous: Context, private val codeLines: L
         modifier, identifier, previous, codeLines
     )
 
-    override fun buildFunctionContext() = FunctionContext(
-        previous, codeLines
-    )
+    override fun buildFunctionContext(modifiers: String, identifier: String, parameters: String, returnType: String) =
+        FunctionContext(
+            modifiers, identifier, parameters, returnType, previous, codeLines
+        )
 }
 
 class FileContext(codeLines: List<String>) : BaseContext(null, codeLines) {
@@ -250,7 +275,10 @@ class PackageContext(previous: Context, codeLines: List<String>) : BaseContext(p
     }
 }
 
-class ClassContext(val modifier: String, val identifier: String, previous: Context, codeLines: List<String>) :
+class ClassContext(
+    val modifier: String, val identifier: String,
+    previous: Context, codeLines: List<String>
+) :
     BaseContext(previous, codeLines) {
     override fun formatHeader(): String {
         return buildString {
@@ -259,10 +287,13 @@ class ClassContext(val modifier: String, val identifier: String, previous: Conte
     }
 }
 
-class FunctionContext(previous: Context, codeLines: List<String>) : BaseContext(previous, codeLines) {
+class FunctionContext(
+    val modifiers: String, val identifier: String, val parameters: String, val returnType: String,
+    previous: Context, codeLines: List<String>
+) : BaseContext(previous, codeLines) {
     override fun formatHeader(): String {
         return buildString {
-            appendLine("Function")
+            appendLine("$modifiers $identifier $parameters: $returnType")
         }
     }
 }
