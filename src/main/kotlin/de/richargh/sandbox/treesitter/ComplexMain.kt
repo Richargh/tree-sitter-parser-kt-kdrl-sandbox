@@ -70,7 +70,7 @@ private fun traverseNode(node: TSNode, context: Context) {
             childrenToExplore = IntRange.EMPTY
         }
         "method_invocation" -> {
-
+            handleMethodInvocation(node, context)
         }
     }
 
@@ -114,6 +114,22 @@ private fun handleFieldDeclaration(node: TSNode, context: Context) {
     context.addField(modifier, identifier, typeIdentifier)
 }
 
+private fun handleMethodInvocation(node: TSNode, context: Context) {
+    var fieldAccess = ""
+    var identifier = ""
+    var argumentList = ""
+    (0 until node.childCount).forEach { index ->
+        val currentNode = node.getChild(index)
+        when (currentNode.type) {
+            "field_access" -> fieldAccess = contents(currentNode, context.codeLines)
+            "identifier" -> identifier += contents(currentNode, context.codeLines)
+            "argument_list" -> argumentList = contents(currentNode, context.codeLines)
+        }
+    }
+
+    context.addMethodInvocation(fieldAccess, identifier, argumentList)
+}
+
 private fun printNode(node: TSNode, indent: String) {
     println("$indent${node.type} [${node.startPoint.row}, ${node.startPoint.column}] - [${node.endPoint.row}, ${node.endPoint.column}]")
 
@@ -129,6 +145,7 @@ interface Context {
     fun addContext(context: Context): Context
     fun addImport(node: TSNode)
     fun addField(modifier: String, identifier: String, typeIdentifier: String)
+    fun addMethodInvocation(fieldAccess: String, identifier: String, argumentList: String)
 
     fun format(indent: Int): String
 
@@ -139,6 +156,7 @@ abstract class BaseContext(override val previous: Context?, override val codeLin
     private val children: MutableList<Context> = mutableListOf()
     private val imports: MutableList<String> = mutableListOf()
     private val fields: MutableList<String> = mutableListOf()
+    private val invokedMethods: MutableList<String> = mutableListOf()
 
     override fun addContext(context: Context): Context {
         children.add(context)
@@ -152,6 +170,10 @@ abstract class BaseContext(override val previous: Context?, override val codeLin
 
     override fun addField(modifier: String, identifier: String, typeIdentifier: String) {
         fields.add("$modifier $identifier: $typeIdentifier")
+    }
+
+    override fun addMethodInvocation(fieldAccess: String, identifier: String, argumentList: String) {
+        invokedMethods.add("$fieldAccess.$identifier$argumentList")
     }
 
     abstract fun formatHeader(): String
@@ -171,6 +193,12 @@ abstract class BaseContext(override val previous: Context?, override val codeLin
             if (fields.isNotEmpty()) {
                 append(subIndent)
                 appendLine(fields.joinToString("\n$subIndent"))
+            }
+
+            if (invokedMethods.isNotEmpty()) {
+                append(subIndent)
+                append("Invoke: ")
+                appendLine(invokedMethods.joinToString("\n${subIndent}Invoke: "))
             }
 
             if(children.isNotEmpty()) {
